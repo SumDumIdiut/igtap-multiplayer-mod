@@ -3,13 +3,13 @@ const WebSocket = require('ws');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 7777;
 const BROADCAST_HZ = 60;
-const STALE_MS = 8000;
+const STALE_MS = 5000;
 
 const MAX_CONNECTIONS = 500;
 const MAX_CONNECTIONS_PER_IP = 20;
 const MAX_PAYLOAD_BYTES = 8 * 1024;
 const MAX_MSGS_PER_SEC = 120; // real gameplay sends every 2 frames; this is generous headroom
-const HEARTBEAT_MS = 15 * 1000;
+const HEARTBEAT_MS = 5 * 1000;
 const MAX_LOBBIES = 500;
 const MAX_LOBBY_MEMBERS = 16;
 const MAX_CHAT_HISTORY = 50; // per lobby, so someone joining mid-conversation isn't lost
