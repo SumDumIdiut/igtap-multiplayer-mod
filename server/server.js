@@ -2,11 +2,8 @@
 const WebSocket = require('ws');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 7777;
-// was 15 - visibly choppy for anyone watching another player, since a client
-// sending state every 2 frames (~30Hz) was being throttled down to 15Hz on
-// the way back out to everyone else
-const BROADCAST_HZ = 30;
-const STALE_MS = 8000; // drop a player's last-known state if nothing arrives for this long
+const BROADCAST_HZ = 60;
+const STALE_MS = 8000;
 
 const MAX_CONNECTIONS = 500;
 const MAX_CONNECTIONS_PER_IP = 20;
