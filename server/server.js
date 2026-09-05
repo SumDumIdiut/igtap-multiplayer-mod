@@ -18,8 +18,9 @@ let nextId = 1;
 let nextLobbyId = 1;
 const clients = new Map();  // id -> { ws, name, lobbyId, ip, msgCount, msgWindowStart }
 const states = new Map();   // id -> { x, y, facingRight, animState, animSpeed, isPaused, lastUpdate }
-const lobbies = new Map();  // lobbyId -> { name, hostId, members: Set<id>, chatHistory: [] }
+const lobbies = new Map();  // lobbyId -> { name, hostId, members: Set<id>, chatHistory: [], hostToken }
 const ipCounts = new Map(); // ip -> count of open connections
+const tokenToLobby = new Map(); // client-generated session token -> lobbyId, so a reconnecting host can reclaim it
 
 function send(ws, obj) {
   if (ws.readyState !== WebSocket.OPEN) return;
@@ -48,7 +49,10 @@ function leaveLobby(id) {
   const l = lobbies.get(c.lobbyId);
   if (l) {
     l.members.delete(id);
-    if (l.members.size === 0) lobbies.delete(c.lobbyId);
+    if (l.members.size === 0) {
+      lobbies.delete(c.lobbyId);
+      if (l.hostToken) tokenToLobby.delete(l.hostToken);
+    }
   }
   c.lobbyId = null;
 }
@@ -174,19 +178,31 @@ function handleMessage(id, msg) {
       break;
     }
     case 'host': {
+      if (typeof msg.playerName === 'string' && msg.playerName.trim().length > 0) c.name = sanitizeName(msg.playerName, 24);
+      const token = typeof msg.token === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(msg.token) ? msg.token : null;
+      const reclaimId = token ? tokenToLobby.get(token) : null;
+      const reclaim = reclaimId != null ? lobbies.get(reclaimId) : null;
+      if (reclaim) {
+        leaveLobby(id);
+        reclaim.hostId = id;
+        reclaim.members.add(id);
+        c.lobbyId = reclaimId;
+        send(c.ws, { type: 'hosted', lobbyId: reclaimId, name: reclaim.name, mapHubId: reclaim.mapHubId, mapName: reclaim.mapName, hard: reclaim.hard });
+        console.log(`[lobby] ${id} reclaimed host of "${reclaim.name}" (#${reclaimId})`);
+        break;
+      }
       if (lobbies.size >= MAX_LOBBIES) {
         send(c.ws, { type: 'join_failed', reason: 'Server is full' });
         break;
       }
-      // applied before any c.name read, including the default lobby-name fallback
-      if (typeof msg.playerName === 'string' && msg.playerName.trim().length > 0) c.name = sanitizeName(msg.playerName, 24);
       leaveLobby(id);
       const lobbyId = nextLobbyId++;
       const name = (typeof msg.name === 'string' && msg.name.trim().length > 0) ? sanitizeName(msg.name, 32) : (c.name + "'s lobby");
       const mapHubId = typeof msg.mapHubId === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(msg.mapHubId) ? msg.mapHubId : null;
       const mapName = mapHubId && typeof msg.mapName === 'string' ? sanitizeName(msg.mapName, 48) : null;
       const hard = !!msg.hard;
-      lobbies.set(lobbyId, { name, hostId: id, members: new Set([id]), chatHistory: [], mapHubId, mapName, hard });
+      lobbies.set(lobbyId, { name, hostId: id, members: new Set([id]), chatHistory: [], mapHubId, mapName, hard, hostToken: token });
+      if (token) tokenToLobby.set(token, lobbyId);
       c.lobbyId = lobbyId;
       send(c.ws, { type: 'hosted', lobbyId, name, mapHubId, mapName, hard });
       console.log(`[lobby] ${id} hosted "${name}" (#${lobbyId})${mapHubId ? ` map=${mapHubId}` : ''}`);
